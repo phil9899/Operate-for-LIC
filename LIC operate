@@ -1,51 +1,64 @@
 #include <Stepper.h>
 
 const int stepsPerRevolution = 2048;
-const int motorSpeed = 1;  // Motor speed (RPM)
-const int stepsPerSecond = stepsPerRevolution * motorSpeed / 60;  // Steps per second
+const int motorSpeed = 10; // Motor speed (RPM)
+const int stepChunk = 4; // Steps per second
 
-Stepper myStepper(stepsPerRevolution, 8, 10, 9, 11);
+const unsigned long runTime = 10 * 60 * 1000; // 10 minutes
 
-const unsigned long runTime = 30 * 60 * 1000; // 30 minutes
-const unsigned long motorRunDuration = 1000;  // Run 1s
-const unsigned long motorPauseDuration = 9000;  // Pause 9s
+const int buttonPin = 2;
+const int motorPins[4] = {8, 9, 10, 11};
+Stepper myStepper(stepsPerRevolution, 8, 10, 9, 11); // Pin setting
 
-const int buttonPin = 2; //Button pin
-int buttonState = 0;
-int lastButtonState = 0;
-boolean motorRunning = false;
+bool motorRunning = false;
+bool lastButtonState = HIGH; // State
+
+unsigned long motorStartTime = 0; // Timestamp
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 40;
+
+void releaseMotor() {
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(motorPins[i], LOW);
+  }
+} // Motor setting
 
 void setup() {
   myStepper.setSpeed(motorSpeed);
+
   pinMode(buttonPin, INPUT_PULLUP);
+  for (int i = 0; i < 4; i++) {
+    pinMode(motorPins[i], OUTPUT);
+  }
 }
 
-void loop() { //Read the button state
-  buttonState = digitalRead(buttonPin);
+void loop() {
+  bool currentButtonState = digitalRead(buttonPin); // Read the state
 
-  if (buttonState != lastButtonState) { //check the button state
+  if (currentButtonState != lastButtonState) {
+    lastDebounceTime = millis();
+  }
 
-    if (buttonState == LOW && !motorRunning) { //Start motor
-       unsigned long startTime = millis();
-       unsigned long elapsedTime = 0;
-    
-       while (buttonState == LOW && elapsedTime < runTime) { // Stop motor or until the run out of time
-        unsigned long currentTime = millis();
-        elapsedTime = currentTime - startTime;
-
-        if (elapsedTime % (motorRunDuration + motorPauseDuration) < motorRunDuration) { // Setting Running time
-          myStepper.step(stepsPerSecond); // Run motor for 1s
-        } else { // Stop the motor
-          myStepper.step(0);
-        }
-
-        buttonState = digitalRead(buttonPin); // Check the button
+  if (millis() - lastDebounceTime > debounceDelay) { // Check the state
+    if (lastButtonState == HIGH && currentButtonState == LOW) {
+      if (!motorRunning) {
+        motorRunning = true;
+        motorStartTime = millis(); // Record
+      } else {
+        motorRunning = false;
+        releaseMotor();
       }
-
-      myStepper.step(0); // Stop
-      motorRunning = false;
     }
   }
 
-  lastButtonState = buttonState; // Update last button state
+  lastButtonState = currentButtonState; // Record state
+
+  if (motorRunning) {
+    if (millis() - motorStartTime >= runTime) {
+      motorRunning = false; // Timeout stop
+      releaseMotor();
+    } else {
+      myStepper.step(stepChunk);
+    }
+  }
 }
